@@ -1,5 +1,6 @@
-import { app, BrowserWindow, Notification, dialog, ipcMain, shell, nativeTheme } from "electron";
-import { join } from "node:path";
+import { app, BrowserWindow, Notification, dialog, ipcMain, shell, nativeTheme, type IpcMainInvokeEvent } from "electron";
+import { isAbsolute, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { CHANNEL, type PickedFile, type Settings, type Snapshot, type TransferAction } from "./shared.js";
 import { expandPaths } from "./files.js";
 import { Store } from "./store.js";
@@ -18,6 +19,79 @@ let lastSnapshot: Snapshot | null = null;
 let tray: TrayHandle | null = null;
 /** Set when the user really quits. Closing the window only hides it, so receiving continues in the tray. */
 let quitting = false;
+
+type IpcHandler = (event: IpcMainInvokeEvent, ...args: any[]) => unknown;
+
+function handleIpc(channel: string, handler: IpcHandler): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    const frame = event.senderFrame;
+    if (!frame || frame !== event.sender.mainFrame || !isTrustedRenderer(frame.url)) {
+      throw new Error("Rejected IPC request from an untrusted renderer.");
+    }
+    return handler(event, ...args);
+  });
+}
+
+function isTrustedRenderer(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol === "file:") return url.href === pathToFileURL(join(__dirname, "../renderer/index.html")).href;
+    const devUrl = process.env.ELECTRON_RENDERER_URL;
+    return Boolean(devUrl && url.origin === new URL(devUrl).origin);
+  } catch {
+    return false;
+  }
+}
+
+function requireString(value: unknown, label: string, maxLength = 4096): string {
+  if (typeof value !== "string" || value.length === 0 || value.length > maxLength) {
+    throw new Error(`Invalid ${label}.`);
+  }
+  return value;
+}
+
+function validateSettingsPatch(value: unknown): Partial<Settings> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Settings update must be an object.");
+  }
+  const patch = value as Record<string, unknown>;
+  const allowed = new Set(["deviceName", "port", "downloadDir", "theme", "allowManualConnections"]);
+  for (const key of Object.keys(patch)) {
+    if (!allowed.has(key)) throw new Error(`Unsupported settings field: ${key}`);
+  }
+  if ("deviceName" in patch && (typeof patch.deviceName !== "string" || !patch.deviceName.trim() || patch.deviceName.trim().length > 64)) {
+    throw new Error("Device name must contain 1–64 characters.");
+  }
+  if ("port" in patch && (!Number.isInteger(patch.port) || (patch.port as number) < 1024 || (patch.port as number) > 65535)) {
+    throw new Error("Port must be an integer between 1024 and 65535.");
+  }
+  if ("downloadDir" in patch && (typeof patch.downloadDir !== "string" || !isAbsolute(patch.downloadDir))) {
+    throw new Error("Download folder must be an absolute path.");
+  }
+  if ("theme" in patch && !["system", "light", "dark"].includes(String(patch.theme))) {
+    throw new Error("Invalid theme.");
+  }
+  if ("allowManualConnections" in patch && typeof patch.allowManualConnections !== "boolean") {
+    throw new Error("Invalid manual-connection setting.");
+  }
+  return patch as Partial<Settings>;
+}
+
+function validatePickedFiles(value: unknown): PickedFile[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 10_000) {
+    throw new Error("Choose between 1 and 10,000 files.");
+  }
+  return value.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("Invalid file entry.");
+    const file = entry as Record<string, unknown>;
+    const path = requireString(file.path, "file path");
+    const name = requireString(file.name, "file name", 4096);
+    if (!isAbsolute(path) || !Number.isSafeInteger(file.size) || (file.size as number) < 0) {
+      throw new Error("Invalid file metadata.");
+    }
+    return { path, name, size: file.size as number };
+  });
+}
 
 function applyTheme(theme: Settings["theme"]): void {
   nativeTheme.themeSource = theme;
@@ -72,6 +146,10 @@ function createWindow(): void {
     },
   });
 
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (!isTrustedRenderer(url)) event.preventDefault();
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -92,35 +170,46 @@ function createWindow(): void {
 }
 
 function registerIpc(): void {
-  ipcMain.handle(CHANNEL.getSnapshot, () => hub.snapshot());
-  ipcMain.handle(CHANNEL.pickFiles, async () => {
+  handleIpc(CHANNEL.getSnapshot, () => hub.snapshot());
+  handleIpc(CHANNEL.pickFiles, async () => {
     const result = await dialog.showOpenDialog(mainWindow ?? undefined!, {
       title: "Choose files to send",
       properties: ["openFile", "multiSelections"],
     });
     return result.canceled ? [] : expandPaths(result.filePaths);
   });
-  ipcMain.handle(CHANNEL.pickFolder, async () => {
+  handleIpc(CHANNEL.pickFolder, async () => {
     const result = await dialog.showOpenDialog(mainWindow ?? undefined!, {
       title: "Choose a folder to send",
       properties: ["openDirectory"],
     });
     return result.canceled ? [] : expandPaths(result.filePaths);
   });
-  ipcMain.handle(CHANNEL.statFiles, (_event, paths: string[]) => expandPaths(paths));
-  ipcMain.handle(CHANNEL.startListening, () => hub.startListening());
-  ipcMain.handle(CHANNEL.stopListening, () => hub.stopListening());
-  ipcMain.handle(CHANNEL.refreshPairCode, () => hub.refreshPairCode());
-  ipcMain.handle(CHANNEL.respondOffer, (_event, offerId: string, accept: boolean) => hub.respondOffer(offerId, accept));
-  ipcMain.handle(CHANNEL.sendFiles, (_event, target: string, files: PickedFile[]) => hub.sendFiles(target, files));
-  ipcMain.handle(CHANNEL.transferAction, (_event, id: string, action: TransferAction) => hub.transferAction(id, action));
-  ipcMain.handle(CHANNEL.updateSettings, (_event, patch: Partial<Settings>) => {
-    const settings = store.updateSettings(patch);
+  handleIpc(CHANNEL.statFiles, (_event, paths: unknown) => {
+    if (!Array.isArray(paths) || paths.some((path) => typeof path !== "string")) throw new Error("Invalid file paths.");
+    return expandPaths(paths as string[]);
+  });
+  handleIpc(CHANNEL.startListening, () => hub.startListening());
+  handleIpc(CHANNEL.stopListening, () => hub.stopListening());
+  handleIpc(CHANNEL.refreshPairCode, () => hub.refreshPairCode());
+  handleIpc(CHANNEL.respondOffer, (_event, offerId: string, accept: boolean) => {
+    requireString(offerId, "offer ID", 128);
+    if (typeof accept !== "boolean") throw new Error("Invalid offer response.");
+    return hub.respondOffer(offerId, accept);
+  });
+  handleIpc(CHANNEL.sendFiles, (_event, target: string, files: unknown) => hub.sendFiles(requireString(target, "target", 4096), validatePickedFiles(files)));
+  handleIpc(CHANNEL.transferAction, (_event, id: string, action: TransferAction) => {
+    requireString(id, "transfer ID", 128);
+    if (!["pause", "resume", "cancel"].includes(action)) throw new Error("Invalid transfer action.");
+    return hub.transferAction(id, action);
+  });
+  handleIpc(CHANNEL.updateSettings, (_event, patch: Partial<Settings>) => {
+    const settings = store.updateSettings(validateSettingsPatch(patch));
     applyTheme(settings.theme);
     hub.emitNow();
     return settings;
   });
-  ipcMain.handle(CHANNEL.chooseDownloadDir, async () => {
+  handleIpc(CHANNEL.chooseDownloadDir, async () => {
     const result = await dialog.showOpenDialog(mainWindow ?? undefined!, {
       title: "Choose the download folder",
       properties: ["openDirectory", "createDirectory"],
@@ -130,9 +219,17 @@ function registerIpc(): void {
     hub.emitNow();
     return result.filePaths[0];
   });
-  ipcMain.handle(CHANNEL.openPath, (_event, path: string) => shell.openPath(path));
-  ipcMain.handle(CHANNEL.showInFolder, (_event, path: string) => shell.showItemInFolder(path));
-  ipcMain.handle(CHANNEL.clearHistory, () => {
+  handleIpc(CHANNEL.openPath, (_event, path: string) => {
+    const safePath = requireString(path, "path");
+    if (!isAbsolute(safePath)) throw new Error("Path must be absolute.");
+    return shell.openPath(safePath);
+  });
+  handleIpc(CHANNEL.showInFolder, (_event, path: string) => {
+    const safePath = requireString(path, "path");
+    if (!isAbsolute(safePath)) throw new Error("Path must be absolute.");
+    return shell.showItemInFolder(safePath);
+  });
+  handleIpc(CHANNEL.clearHistory, () => {
     store.clearHistory();
     hub.emitNow();
   });

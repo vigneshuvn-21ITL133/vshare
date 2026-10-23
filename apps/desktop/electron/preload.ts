@@ -21,7 +21,7 @@ const api: VShareApi = {
   statFiles: (paths) => ipcRenderer.invoke(CHANNEL.statFiles, paths) as Promise<PickedFile[]>,
   // Electron 32+ removed File.path; webUtils is the supported way to get a real path for a dropped file.
   pathForFile: (file: File) => webUtils.getPathForFile(file),
-  startListening: () => ipcRenderer.invoke(CHANNEL.startListening) as Promise<void>,
+  startListening: () => ipcRenderer.invoke(CHANNEL.startListening) as Promise<boolean>,
   stopListening: () => ipcRenderer.invoke(CHANNEL.stopListening) as Promise<void>,
   refreshPairCode: () => ipcRenderer.invoke(CHANNEL.refreshPairCode) as Promise<void>,
   respondOffer: (offerId, accept) => ipcRenderer.invoke(CHANNEL.respondOffer, offerId, accept) as Promise<void>,

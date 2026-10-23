@@ -122,7 +122,7 @@ export interface VShareApi {
   pickFolder(): Promise<PickedFile[]>;
   statFiles(paths: string[]): Promise<PickedFile[]>;
   pathForFile(file: File): string;
-  startListening(): Promise<void>;
+  startListening(): Promise<boolean>;
   stopListening(): Promise<void>;
   refreshPairCode(): Promise<void>;
   respondOffer(offerId: string, accept: boolean): Promise<void>;

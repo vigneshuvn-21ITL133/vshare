@@ -83,8 +83,8 @@ export class TransferHub {
 
   // ---------- listening and pairing ----------
 
-  async startListening(): Promise<void> {
-    if (this.server) return;
+  async startListening(): Promise<boolean> {
+    if (this.server) return true;
     try {
       this.server = await listenForSenders(this.store.settings.port, (socket) => this.handleIncoming(socket), "0.0.0.0");
       this.listenError = null;
@@ -94,13 +94,23 @@ export class TransferHub {
       this.server = null;
     }
     this.emitNow();
+    return this.server !== null;
   }
 
   async stopListening(): Promise<void> {
     const server = this.server;
     this.server = null;
     this.clearPairToken();
-    if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+
+    // Stop accepting new connections immediately. Do not await server.close(): Node waits
+    // for every accepted socket to finish, which can make the settings switch hang during
+    // a large transfer. Existing transfers may finish on their already-accepted sockets.
+    if (server) {
+      server.close((error?: Error) => {
+        if (error) this.listenError = describe(error);
+        this.emitNow();
+      });
+    }
     this.emitNow();
   }
 
