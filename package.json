@@ -15,9 +15,15 @@
     "build:desktop": "pnpm --filter @vshare/protocol build && pnpm --filter @vshare/desktop build",
     "build:win": "pnpm --filter @vshare/desktop build:win",
     "dev:mobile": "pnpm --filter @vshare/mobile start",
-    "build:android": "pnpm --filter @vshare/mobile build:android"
+    "build:android": "pnpm --filter @vshare/mobile build:android",
+    "dev:mobile:tunnel": "pnpm --filter @vshare/mobile start:tunnel"
   },
   "devDependencies": {
     "typescript": "~6.0.3"
+  },
+  "dependencies": {
+    "expo": "~57.0.31",
+    "react": "19.2.3",
+    "react-native": "0.86.3"
   }
 }

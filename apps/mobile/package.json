@@ -11,7 +11,8 @@
     "build:android": "eas build --profile production --platform android",
     "build:android:dev": "eas build --profile development --platform android",
     "export:android": "expo export --platform android",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "start:tunnel": "expo start --dev-client --tunnel"
   },
   "dependencies": {
     "@vshare/protocol": "workspace:*",
@@ -20,6 +21,7 @@
     "expo-camera": "~57.0.6",
     "expo-constants": "~57.0.22",
     "expo-crypto": "~57.0.4",
+    "expo-dev-client": "~57.0.20",
     "expo-document-picker": "~57.0.3",
     "expo-file-system": "~57.0.7",
     "expo-keep-awake": "~57.0.2",
@@ -38,6 +40,7 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
     "react-native-tcp-socket": "^6.4.3",
+    "react-native-web": "^0.21.4",
     "react-native-worklets": "0.10.1",
     "zustand": "^5.0.16"
   },
