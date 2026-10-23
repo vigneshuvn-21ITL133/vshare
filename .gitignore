@@ -1,0 +1,10 @@
+node_modules/
+dist/
+out/
+*.log
+.expo/
+.env*.local
+apps/mobile/android/
+apps/mobile/ios/
+.DS_Store
+Thumbs.db

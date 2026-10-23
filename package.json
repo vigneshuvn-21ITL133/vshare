@@ -1,0 +1,23 @@
+{
+  "name": "vshare-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "V_share: wireless file transfer between Windows and Android over local WiFi",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "build:protocol": "pnpm --filter @vshare/protocol build",
+    "dev:desktop": "pnpm --filter @vshare/protocol build && pnpm --filter @vshare/desktop dev",
+    "build:desktop": "pnpm --filter @vshare/protocol build && pnpm --filter @vshare/desktop build",
+    "build:win": "pnpm --filter @vshare/desktop build:win",
+    "dev:mobile": "pnpm --filter @vshare/mobile start",
+    "build:android": "pnpm --filter @vshare/mobile build:android"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  }
+}

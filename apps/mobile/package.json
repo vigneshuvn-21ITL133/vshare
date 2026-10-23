@@ -1,0 +1,52 @@
+{
+  "name": "@vshare/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "V_share Mobile: Android companion for wireless file transfer (Expo SDK 57)",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "prebuild:android": "expo prebuild --platform android",
+    "build:android": "eas build --profile production --platform android",
+    "build:android:dev": "eas build --profile development --platform android",
+    "export:android": "expo export --platform android",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@vshare/protocol": "workspace:*",
+    "buffer": "^6.0.3",
+    "expo": "~57.0.31",
+    "expo-camera": "~57.0.6",
+    "expo-constants": "~57.0.22",
+    "expo-crypto": "~57.0.4",
+    "expo-document-picker": "~57.0.3",
+    "expo-file-system": "~57.0.7",
+    "expo-keep-awake": "~57.0.2",
+    "expo-linking": "~57.0.13",
+    "expo-media-library": "~57.0.5",
+    "expo-network": "~57.0.3",
+    "expo-router": "~57.0.29",
+    "expo-sharing": "~57.0.24",
+    "expo-status-bar": "~57.0.1",
+    "fast-text-encoding": "^1.0.6",
+    "qrcode": "^1.5.4",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-gesture-handler": "~2.32.0",
+    "react-native-reanimated": "4.5.1",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0",
+    "react-native-tcp-socket": "^6.4.3",
+    "react-native-worklets": "0.10.1",
+    "zustand": "^5.0.16"
+  },
+  "devDependencies": {
+    "@react-native/metro-config": "0.86.3",
+    "@types/fast-text-encoding": "^1.0.3",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "~19.2.0",
+    "react-dom": "19.2.3",
+    "typescript": "~6.0.3"
+  }
+}

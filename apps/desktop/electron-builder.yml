@@ -1,0 +1,28 @@
+appId: com.vshare.desktop
+productName: V_share
+copyright: "Copyright 2026 V_share"
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+extraMetadata:
+  main: out/main/index.js
+win:
+  signAndEditExecutable: false
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  icon: build/icon.ico
+  artifactName: "V_share-${version}-${arch}.${ext}"
+portable:
+  artifactName: "V_share-${version}-${arch}-portable.${ext}"
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: V_share

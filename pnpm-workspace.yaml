@@ -1,0 +1,9 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+
+# Electron downloads its binary during install. Allow its build script.
+onlyBuiltDependencies:
+  - electron
+  - esbuild
+  - protobufjs

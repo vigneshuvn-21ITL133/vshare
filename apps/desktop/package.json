@@ -1,0 +1,36 @@
+{
+  "name": "@vshare/desktop",
+  "productName": "V_share",
+  "version": "0.1.0",
+  "private": true,
+  "description": "V_share Desktop: send and receive files with Android over local WiFi",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
+    "test": "vitest run",
+    "build:win": "electron-vite build && electron-builder --win nsis portable",
+    "build:win:portable": "electron-vite build && electron-builder --win portable",
+    "build:win:dir": "electron-vite build && electron-builder --win --dir"
+  },
+  "dependencies": {
+    "@vshare/protocol": "workspace:*",
+    "qrcode": "^1.5.4",
+    "react": "19.2.9",
+    "react-dom": "19.2.9"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "~19.2.0",
+    "@types/react-dom": "~19.2.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "45.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}
