@@ -1,7 +1,7 @@
 import { HELLO_TIMEOUT_MS, MAX_FRAME_BYTES, PROTOCOL_VERSION } from "./constants.js";
 import { safeRelativeSegments } from "./paths.js";
 import { Connection, type ByteSocket, type IncomingChunk } from "./connection.js";
-import { chunkCountFor, type FileSink } from "./files.js";
+import { chunkCountFor, chunkLengthFor, type FileSink } from "./files.js";
 import {
   bytesToHex,
   decryptChunk,
@@ -265,7 +265,10 @@ export class Receiver {
     if (header.index !== active.expectedIndex) throw new Error("chunk arrived out of order");
 
     const plaintext = decryptChunk(session.key, header, chunk.headerBytes, chunk.ciphertext);
-    if (plaintext.length > meta.chunkSize) throw new Error("chunk larger than declared size");
+    const expectedLength = chunkLengthFor(meta.size, meta.chunkSize, header.index);
+    if (plaintext.length !== expectedLength) {
+      throw new Error(`chunk length does not match declared file size for ${meta.name}`);
+    }
 
     await active.sink.write(plaintext);
     active.hasher.update(plaintext);
@@ -294,12 +297,13 @@ export class Receiver {
 
     const digest = bytesToHex(active.hasher.digest());
     const complete = active.expectedIndex === end.chunkCount && end.chunkCount === meta.chunkCount;
+    const sizeMatches = active.bytes === meta.size;
     const hashMatches = digest === meta.sha256 && end.sha256 === meta.sha256;
 
-    if (!complete || !hashMatches) {
+    if (!complete || !sizeMatches || !hashMatches) {
       await active.sink.abort().catch(() => undefined);
       transfer.current = undefined;
-      const reason = !complete ? "missing chunks" : "hash mismatch";
+      const reason = !complete ? "missing chunks" : !sizeMatches ? "file size mismatch" : "hash mismatch";
       this.connection.sendControl({ type: "COMPLETE", transferId: transfer.transferId, fileId: meta.id, ok: false, reason });
       this.finish({ state: "error", error: `${meta.name}: ${reason}` });
       return;
