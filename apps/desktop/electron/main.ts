@@ -22,7 +22,7 @@ let quitting = false;
 type IpcHandler = (event: IpcMainInvokeEvent, ...args: any[]) => unknown;
 
 function handleIpc(channel: string, handler: IpcHandler): void {
-  handleIpc(channel, (event, ...args) => {
+  ipcMain.handle(channel, (event, ...args) => {
     const frame = event.senderFrame;
     if (!frame || frame !== event.sender.mainFrame || !isTrustedRenderer(frame.url)) {
       throw new Error("Rejected IPC request from an untrusted renderer.");
@@ -165,35 +165,46 @@ function createWindow(): void {
 }
 
 function registerIpc(): void {
-  ipcMain.handle(CHANNEL.getSnapshot, () => hub.snapshot());
-  ipcMain.handle(CHANNEL.pickFiles, async () => {
+  handleIpc(CHANNEL.getSnapshot, () => hub.snapshot());
+  handleIpc(CHANNEL.pickFiles, async () => {
     const result = await dialog.showOpenDialog(mainWindow ?? undefined!, {
       title: "Choose files to send",
       properties: ["openFile", "multiSelections"],
     });
     return result.canceled ? [] : expandPaths(result.filePaths);
   });
-  ipcMain.handle(CHANNEL.pickFolder, async () => {
+  handleIpc(CHANNEL.pickFolder, async () => {
     const result = await dialog.showOpenDialog(mainWindow ?? undefined!, {
       title: "Choose a folder to send",
       properties: ["openDirectory"],
     });
     return result.canceled ? [] : expandPaths(result.filePaths);
   });
-  ipcMain.handle(CHANNEL.statFiles, (_event, paths: string[]) => expandPaths(paths));
-  ipcMain.handle(CHANNEL.startListening, () => hub.startListening());
-  ipcMain.handle(CHANNEL.stopListening, () => hub.stopListening());
-  ipcMain.handle(CHANNEL.refreshPairCode, () => hub.refreshPairCode());
-  ipcMain.handle(CHANNEL.respondOffer, (_event, offerId: string, accept: boolean) => hub.respondOffer(offerId, accept));
-  ipcMain.handle(CHANNEL.sendFiles, (_event, target: string, files: PickedFile[]) => hub.sendFiles(target, files));
-  ipcMain.handle(CHANNEL.transferAction, (_event, id: string, action: TransferAction) => hub.transferAction(id, action));
-  ipcMain.handle(CHANNEL.updateSettings, (_event, patch: Partial<Settings>) => {
+  handleIpc(CHANNEL.statFiles, (_event, paths: unknown) => {
+    if (!Array.isArray(paths) || paths.some((path) => typeof path !== "string")) throw new Error("Invalid file paths.");
+    return expandPaths(paths as string[]);
+  });
+  handleIpc(CHANNEL.startListening, () => hub.startListening());
+  handleIpc(CHANNEL.stopListening, () => hub.stopListening());
+  handleIpc(CHANNEL.refreshPairCode, () => hub.refreshPairCode());
+  handleIpc(CHANNEL.respondOffer, (_event, offerId: string, accept: boolean) => {
+    requireString(offerId, "offer ID", 128);
+    if (typeof accept !== "boolean") throw new Error("Invalid offer response.");
+    return hub.respondOffer(offerId, accept);
+  });
+  handleIpc(CHANNEL.sendFiles, (_event, target: string, files: unknown) => hub.sendFiles(requireString(target, "target", 4096), validatePickedFiles(files)));
+  handleIpc(CHANNEL.transferAction, (_event, id: string, action: TransferAction) => {
+    requireString(id, "transfer ID", 128);
+    if (!["pause", "resume", "cancel"].includes(action)) throw new Error("Invalid transfer action.");
+    return hub.transferAction(id, action);
+  });
+  handleIpc(CHANNEL.updateSettings, (_event, patch: Partial<Settings>) => {
     const settings = store.updateSettings(validateSettingsPatch(patch));
     applyTheme(settings.theme);
     hub.emitNow();
     return settings;
   });
-  ipcMain.handle(CHANNEL.chooseDownloadDir, async () => {
+  handleIpc(CHANNEL.chooseDownloadDir, async () => {
     const result = await dialog.showOpenDialog(mainWindow ?? undefined!, {
       title: "Choose the download folder",
       properties: ["openDirectory", "createDirectory"],
@@ -203,9 +214,17 @@ function registerIpc(): void {
     hub.emitNow();
     return result.filePaths[0];
   });
-  ipcMain.handle(CHANNEL.openPath, (_event, path: string) => shell.openPath(path));
-  ipcMain.handle(CHANNEL.showInFolder, (_event, path: string) => shell.showItemInFolder(path));
-  ipcMain.handle(CHANNEL.clearHistory, () => {
+  handleIpc(CHANNEL.openPath, (_event, path: string) => {
+    const safePath = requireString(path, "path");
+    if (!isAbsolute(safePath)) throw new Error("Path must be absolute.");
+    return shell.openPath(safePath);
+  });
+  handleIpc(CHANNEL.showInFolder, (_event, path: string) => {
+    const safePath = requireString(path, "path");
+    if (!isAbsolute(safePath)) throw new Error("Path must be absolute.");
+    return shell.showItemInFolder(safePath);
+  });
+  handleIpc(CHANNEL.clearHistory, () => {
     store.clearHistory();
     hub.emitNow();
   });
