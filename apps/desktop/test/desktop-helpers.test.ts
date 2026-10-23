@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseTarget } from "../electron/target.js";
@@ -72,6 +72,20 @@ describe("file helpers on disk", () => {
     await aborted.write(new TextEncoder().encode("half"));
     await aborted.abort();
     expect(existsSync(aborted.path)).toBe(false);
+  });
+
+  it("rejects a selected top-level symbolic link", async () => {
+    const target = join(dir, "outside.txt");
+    const link = join(dir, "linked.txt");
+    writeFileSync(target, "outside");
+    try {
+      symlinkSync(target, link);
+    } catch {
+      // Some Windows setups disable symlink creation without Developer Mode/admin rights.
+      return;
+    }
+    await expect(expandPaths([link])).rejects.toThrow(/symbolic links cannot be sent/i);
+    await expect(fileSourceFor(link)).rejects.toThrow(/not a regular file/i);
   });
 
   it("expands a folder into relative names", async () => {
