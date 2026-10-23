@@ -26,6 +26,11 @@ export function chunkCountFor(size: number, chunkSize: number): number {
   return Math.ceil(size / chunkSize);
 }
 
+/** Expected plaintext length for a zero-based chunk index. */
+export function chunkLengthFor(size: number, chunkSize: number, index: number): number {
+  return Math.min(chunkSize, Math.max(0, size - index * chunkSize));
+}
+
 /** Streams the whole source through SHA-256 without holding it in memory. */
 export async function hashSource(source: FileSource, chunkSize: number): Promise<string> {
   const hasher = sha256.create();

@@ -16,6 +16,7 @@ import {
   parseControl,
   hashSource,
   chunkCountFor,
+  chunkLengthFor,
   type ChunkHeader,
 } from "../src/index.js";
 import { bytesEqual, memorySource, randomBytesOf } from "./helpers.js";
@@ -94,6 +95,10 @@ describe("files", () => {
     expect(hashA).toMatch(/^[0-9a-f]{64}$/);
     expect(chunkCountFor(3_000_001, 1024 * 1024)).toBe(3);
     expect(chunkCountFor(0, 1024 * 1024)).toBe(0);
+    expect(chunkLengthFor(100, 64, 0)).toBe(64);
+    expect(chunkLengthFor(100, 64, 1)).toBe(36);
+    expect(chunkLengthFor(100, 64, 2)).toBe(0);
+    expect(chunkLengthFor(0, 64, 0)).toBe(0);
   });
 });
 

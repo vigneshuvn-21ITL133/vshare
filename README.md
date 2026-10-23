@@ -285,7 +285,13 @@ Expo Go cannot load `react-native-tcp-socket`, so the app needs a development bu
 cd apps/mobile
 npx expo prebuild --platform android
 npx expo run:android
-npx expo start --dev-client     # in another terminal
+npx expo start --dev-client --host lan   # in another terminal
+```
+
+If the QR code opens a `localhost` URL or refuses to connect, start Metro with `--host lan` (above). If LAN discovery still fails on your network, use:
+
+```bash
+npx expo start --dev-client --tunnel
 ```
 
 ### Cloud build with EAS
