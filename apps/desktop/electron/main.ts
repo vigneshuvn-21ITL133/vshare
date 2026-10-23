@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Notification, dialog, ipcMain, shell, nativeTheme, type IpcMainInvokeEvent } from "electron";
 import { isAbsolute, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { CHANNEL, type PickedFile, type Settings, type Snapshot, type TransferAction } from "./shared.js";
 import { expandPaths } from "./files.js";
 import { Store } from "./store.js";
@@ -34,7 +35,7 @@ function handleIpc(channel: string, handler: IpcHandler): void {
 function isTrustedRenderer(rawUrl: string): boolean {
   try {
     const url = new URL(rawUrl);
-    if (url.protocol === "file:") return true;
+    if (url.protocol === "file:") return url.href === pathToFileURL(join(__dirname, "../renderer/index.html")).href;
     const devUrl = process.env.ELECTRON_RENDERER_URL;
     return Boolean(devUrl && url.origin === new URL(devUrl).origin);
   } catch {
@@ -143,6 +144,10 @@ function createWindow(): void {
       nodeIntegration: false,
       sandbox: false,
     },
+  });
+
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (!isTrustedRenderer(url)) event.preventDefault();
   });
 
   mainWindow.on("closed", () => {
