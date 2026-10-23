@@ -1,4 +1,4 @@
-import { open, stat, unlink, mkdir, readdir } from "node:fs/promises";
+import { open, stat, lstat, unlink, mkdir, readdir } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { existsSync } from "node:fs";
 import { safeRelativeSegments, type FileSink, type FileSource } from "@vshare/protocol";
@@ -30,9 +30,20 @@ export function mimeFor(name: string): string {
  * Symbolic links are skipped so a link cannot pull in files from outside the folder.
  */
 export async function expandPaths(paths: string[]): Promise<PickedFile[]> {
+  if (!Array.isArray(paths) || paths.length > MAX_FILES) {
+    throw new Error(`Choose at most ${MAX_FILES} paths at a time.`);
+  }
   const out: PickedFile[] = [];
   for (const path of paths) {
-    const info = await stat(path);
+    if (typeof path !== "string" || path.length === 0 || path.length > 32_767) {
+      throw new Error("A selected path is invalid.");
+    }
+    // lstat does not follow a top-level symlink/junction. walk() already skips
+    // symlinks found inside folders, so this closes the top-level escape path too.
+    const info = await lstat(path);
+    if (info.isSymbolicLink()) {
+      throw new Error(`Symbolic links cannot be sent: "${basename(path)}".`);
+    }
     if (info.isFile()) {
       out.push({ path, name: basename(path), size: info.size });
     } else if (info.isDirectory()) {
@@ -70,8 +81,8 @@ async function walk(dir: string, prefix: string, out: PickedFile[]): Promise<voi
  * `displayName` is the name the receiver sees; it defaults to the file's own name.
  */
 export async function fileSourceFor(path: string, displayName?: string): Promise<FileSource> {
-  const info = await stat(path);
-  if (!info.isFile()) throw new Error(`${basename(path)} is not a regular file`);
+  const info = await lstat(path);
+  if (info.isSymbolicLink() || !info.isFile()) throw new Error(`${basename(path)} is not a regular file`);
   const name = displayName ?? basename(path);
   return {
     name,
