@@ -23,10 +23,26 @@ export function SettingsPage({ snapshot, notify }: Props) {
 
   async function savePort() {
     if (!portValid || portNumber === settings.port) return;
-    await api.stopListening();
-    await api.updateSettings({ port: portNumber });
-    await api.startListening();
-    notify(`Listening on port ${portNumber}`);
+    const previousPort = settings.port;
+    try {
+      await api.stopListening();
+      await api.updateSettings({ port: portNumber });
+      const started = await api.startListening();
+      if (!started) {
+        // Keep the app usable if another application already owns the selected port.
+        await api.updateSettings({ port: previousPort });
+        const restored = await api.startListening();
+        notify(
+          restored
+            ? `Port ${portNumber} is unavailable. Restored port ${previousPort}.`
+            : `Could not listen on port ${portNumber} or restore port ${previousPort}. Check the network settings.`,
+        );
+        return;
+      }
+      notify(`Listening on port ${portNumber}`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not update the listening port.");
+    }
   }
 
   return (
