@@ -5,7 +5,7 @@
   "description": "V_share Mobile: Android companion for wireless file transfer (Expo SDK 57)",
   "main": "expo-router/entry",
   "scripts": {
-    "start": "expo start --dev-client",
+    "start": "expo start --dev-client --lan",
     "android": "expo run:android",
     "prebuild:android": "expo prebuild --platform android",
     "build:android": "eas build --profile production --platform android",

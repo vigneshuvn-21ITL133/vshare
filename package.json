@@ -8,8 +8,8 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "test": "pnpm -r --if-present test",
-    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm build:protocol && pnpm -r --if-present test",
+    "typecheck": "pnpm build:protocol && pnpm -r --if-present typecheck",
     "build:protocol": "pnpm --filter @vshare/protocol build",
     "dev:desktop": "pnpm --filter @vshare/protocol build && pnpm --filter @vshare/desktop dev",
     "build:desktop": "pnpm --filter @vshare/protocol build && pnpm --filter @vshare/desktop build",
@@ -20,10 +20,5 @@
   },
   "devDependencies": {
     "typescript": "~6.0.3"
-  },
-  "dependencies": {
-    "expo": "~57.0.31",
-    "react": "19.2.3",
-    "react-native": "0.86.3"
   }
 }
