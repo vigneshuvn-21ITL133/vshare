@@ -7,6 +7,10 @@ directories:
 files:
   - out/**/*
   - package.json
+# Windows Bluetooth bridge, published by `pnpm build:bridge` (self-contained, no .NET install needed).
+extraResources:
+  - from: bluetooth-bridge/publish
+    to: bluetooth-bridge
 extraMetadata:
   main: out/main/index.js
 win:
