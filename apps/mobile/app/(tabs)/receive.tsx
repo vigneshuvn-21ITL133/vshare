@@ -12,6 +12,10 @@ export default function ReceiveScreen() {
   const startListening = useStore((state) => state.startListening);
   const stopListening = useStore((state) => state.stopListening);
   const refreshPairCode = useStore((state) => state.refreshPairCode);
+  const btReceiving = useStore((state) => state.btReceiving);
+  const btError = useStore((state) => state.btError);
+  const startBluetoothReceive = useStore((state) => state.startBluetoothReceive);
+  const stopBluetoothReceive = useStore((state) => state.stopBluetoothReceive);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -25,6 +29,17 @@ export default function ReceiveScreen() {
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <Title sub="On the PC, open Send and scan this code, or type the address below.">Receive Files</Title>
+
+      <Card>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: colors.text, fontSize: 14, fontWeight: "500" }}>Accept over Bluetooth</Text>
+            <Text style={{ color: colors.muted, fontSize: 12, marginTop: 2 }}>Lets a paired PC send files without Wi-Fi. You still approve each transfer.</Text>
+          </View>
+          <Switch label="Accept over Bluetooth" value={btReceiving} onChange={(on) => void (on ? startBluetoothReceive() : stopBluetoothReceive())} />
+        </View>
+        {btError && <Text style={{ color: colors.bad, fontSize: 13, marginTop: spacing.sm }}>{btError}</Text>}
+      </Card>
 
       <Card>
         {listen.listening && listen.pairUri ? (

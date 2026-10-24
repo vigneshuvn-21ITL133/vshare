@@ -3,6 +3,8 @@ import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from "react-nati
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import { router } from "expo-router";
+import type { BluetoothDevice } from "react-native-bluetooth-classic";
+import { ensureBluetoothReady, pairedBluetoothDevices } from "../../src/net/bluetooth";
 import { Badge, Button, Card, Empty, Title, formatBytes } from "../../src/components/ui";
 import { useStore } from "../../src/state/store";
 import type { SendableFile } from "../../src/state/types";
@@ -12,6 +14,8 @@ export default function SendScreen() {
   const pendingTarget = useStore((state) => state.pendingTarget);
   const setPendingTarget = useStore((state) => state.setPendingTarget);
   const sendFiles = useStore((state) => state.sendFiles);
+  const sendFilesBluetooth = useStore((state) => state.sendFilesBluetooth);
+  const [btDevices, setBtDevices] = useState<BluetoothDevice[] | null>(null);
   const [files, setFiles] = useState<SendableFile[]>([]);
   const [target, setTarget] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +50,29 @@ export default function SendScreen() {
     setError(null);
     setBusy(true);
     const outcome = await sendFiles(target, files);
+    setBusy(false);
+    if (outcome.ok) {
+      setFiles([]);
+      router.navigate("/");
+    } else {
+      setError(outcome.error);
+    }
+  }
+
+  async function loadPaired() {
+    setError(null);
+    const ready = await ensureBluetoothReady();
+    if (!ready.ok) {
+      setError(ready.error);
+      return;
+    }
+    setBtDevices(await pairedBluetoothDevices());
+  }
+
+  async function sendToBluetooth(address: string) {
+    setError(null);
+    setBusy(true);
+    const outcome = await sendFilesBluetooth(address, files);
     setBusy(false);
     if (outcome.ok) {
       setFiles([]);
@@ -102,6 +129,24 @@ export default function SendScreen() {
         </View>
         <Text style={styles.hint}>A scanned code is one-time use and expires after two minutes. Typing an address also works if manual connections are allowed in Settings.</Text>
         {error && <Text style={styles.error}>{error}</Text>}
+      </Card>
+
+      <Card>
+        <Text style={styles.cardTitle}>Send over Bluetooth</Text>
+        <Text style={styles.hint}>Pair the PC in Android Bluetooth settings first, then choose it below. The PC must accept Bluetooth transfers.</Text>
+        <View style={{ marginTop: spacing.sm }}>
+          <Button label="Show paired PCs" variant="ghost" full onPress={() => void loadPaired()} />
+        </View>
+        {btDevices && btDevices.length === 0 && <Empty>No paired devices. Pair the PC in Android Bluetooth settings.</Empty>}
+        {btDevices?.map((device) => (
+          <View key={device.address} style={styles.fileRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fileName} numberOfLines={1}>{device.name || device.address}</Text>
+              <Text style={styles.meta}>{device.address}</Text>
+            </View>
+            <Button label="Send" variant="primary" disabled={busy || files.length === 0} onPress={() => void sendToBluetooth(device.address)} />
+          </View>
+        ))}
       </Card>
 
       <View style={styles.footer}>
