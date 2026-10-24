@@ -30,3 +30,12 @@ Thumbs.db
 .idea/
 /android/
 /apps/mobile/app.config.ts
+
+
+# .NET build output (Bluetooth bridge)
+bin/
+obj/
+*.Up2Date
+*.user
+*.suo
+.vs/
