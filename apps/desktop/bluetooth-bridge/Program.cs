@@ -167,7 +167,8 @@ internal sealed class Bridge
             try
             {
                 using var device = await BluetoothDevice.FromIdAsync(info.Id);
-                if (device != null)
+                // Only phones are useful as targets. Earbuds, keyboards and car kits are left out.
+                if (device != null && device.ClassOfDevice.MajorClass == BluetoothMajorClass.Phone)
                 {
                     found.Add(new { name = device.Name, address = FormatAddress(device.BluetoothAddress) });
                 }

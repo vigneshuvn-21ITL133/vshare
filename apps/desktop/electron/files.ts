@@ -111,7 +111,8 @@ export async function fileSinkIn(dir: string, name: string): Promise<FileSink & 
   if (!segments) throw new Error(`Refusing an unsafe file name: ${name}`);
   const parts = segments.map((segment) => sanitizeName(segment));
   const folder = join(dir, ...parts.slice(0, -1));
-  await mkdir(folder, { recursive: true });
+  // Create folders only when the name has them. mkdir on a drive root (D:\) fails with EPERM on Windows.
+  if (parts.length > 1) await mkdir(folder, { recursive: true });
   const path = uniquePath(folder, parts[parts.length - 1]);
   const handle = await open(path, "wx");
   return {
