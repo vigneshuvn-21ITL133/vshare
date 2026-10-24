@@ -42,7 +42,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       "android.permission.READ_MEDIA_AUDIO",
       "android.permission.BLUETOOTH_CONNECT",
       "android.permission.BLUETOOTH_SCAN",
-      "android.permission.BLUETOOTH_ADVERTISE"
+      "android.permission.BLUETOOTH_ADVERTISE",
     ],
   },
 
@@ -57,13 +57,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         recordAudioAndroid: false,
       },
     ],
+    // Release-only size settings: arm64 phones only, code shrinking, unused resources removed.
+    // Debug/development builds are not affected.
     [
-      "expo-media-library",
+      "expo-build-properties",
       {
-        photosPermission:
-          "V_share lets you choose photos and videos to send.",
-        savePhotosPermission: false,
-        isAccessMediaLocationEnabled: false,
+        android: {
+          reactNativeArchitectures: ["arm64-v8a"],
+          enableMinifyInReleaseBuilds: true,
+          enableShrinkResourcesInReleaseBuilds: true,
+        },
       },
     ],
   ],

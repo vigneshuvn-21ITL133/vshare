@@ -10,7 +10,7 @@ files:
 extraMetadata:
   main: out/main/index.js
 win:
-  signAndEditExecutable: false
+  signAndEditExecutable: true
   target:
     - target: nsis
       arch: [x64]
