@@ -26,9 +26,25 @@ export function cancelAcceptBluetooth(): Promise<boolean> {
   return RNBluetoothClassic.cancelAccept();
 }
 
-/** Lists devices already paired in Android's Bluetooth settings. */
-export function pairedBluetoothDevices(): Promise<BluetoothDevice[]> {
-  return RNBluetoothClassic.getBondedDevices();
+/** Android's major device class for computers (0x0100). Phones are 0x0200, earbuds 0x0400. */
+const MAJOR_CLASS_COMPUTER = 0x0100;
+
+/**
+ * Android reports each device's class as { majorClass }. Only computers are useful
+ * as send targets, so earbuds, car kits and phones are left out.
+ */
+function isComputer(device: BluetoothDevice): boolean {
+  const deviceClass = (device as unknown as { deviceClass?: unknown }).deviceClass;
+  if (deviceClass && typeof deviceClass === "object" && "majorClass" in deviceClass) {
+    return (deviceClass as { majorClass?: unknown }).majorClass === MAJOR_CLASS_COMPUTER;
+  }
+  return false;
+}
+
+/** Lists paired computers (PCs) that V_share can send to. */
+export async function pairedBluetoothDevices(): Promise<BluetoothDevice[]> {
+  const devices = await RNBluetoothClassic.getBondedDevices();
+  return devices.filter(isComputer);
 }
 
 function wrapBluetooth(device: BluetoothDevice): ByteSocket {
@@ -40,6 +56,24 @@ function wrapBluetooth(device: BluetoothDevice): ByteSocket {
     closed = true;
     closeHandler?.(error);
   };
+
+  let dataHandler: ((data: Uint8Array) => void) | null = null;
+  const queued: Uint8Array[] = [];
+
+  // Subscribe to incoming data now, not when the protocol attaches its handler. The PC sends
+  // HELLO right after connecting, so a late subscription loses that first frame.
+  device.onDataReceived((event: BluetoothDeviceReadEvent) => {
+    let frame: Uint8Array;
+    try {
+      frame = decodeBase64(event.data);
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error("Bad Bluetooth frame"));
+      void device.disconnect();
+      return;
+    }
+    if (dataHandler) dataHandler(frame);
+    else queued.push(frame);
+  });
 
   // Fires when the link drops, filtered to this device.
   RNBluetoothClassic.onDeviceDisconnected((event: BluetoothDeviceEvent) => {
@@ -55,14 +89,8 @@ function wrapBluetooth(device: BluetoothDevice): ByteSocket {
       void device.disconnect().finally(() => finish());
     },
     onData(handler: (data: Uint8Array) => void): void {
-      device.onDataReceived((event: BluetoothDeviceReadEvent) => {
-        try {
-          handler(decodeBase64(event.data));
-        } catch (error) {
-          finish(error instanceof Error ? error : new Error("Bad Bluetooth frame"));
-          void device.disconnect();
-        }
-      });
+      dataHandler = handler;
+      for (const frame of queued.splice(0)) handler(frame);
     },
     onClose(handler: (error?: Error) => void): void {
       closeHandler = handler;
