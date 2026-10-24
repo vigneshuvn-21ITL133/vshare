@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import {
   CHANNEL,
+  type BluetoothPairedResult,
   type PickedFile,
   type SendOutcome,
   type Settings,
@@ -32,6 +33,10 @@ const api: VShareApi = {
   openPath: (path) => ipcRenderer.invoke(CHANNEL.openPath, path) as Promise<void>,
   showInFolder: (path) => ipcRenderer.invoke(CHANNEL.showInFolder, path) as Promise<void>,
   clearHistory: () => ipcRenderer.invoke(CHANNEL.clearHistory) as Promise<void>,
+  bluetoothPaired: () => ipcRenderer.invoke(CHANNEL.bluetoothPaired) as Promise<BluetoothPairedResult>,
+  startBluetooth: () => ipcRenderer.invoke(CHANNEL.startBluetooth) as Promise<void>,
+  stopBluetooth: () => ipcRenderer.invoke(CHANNEL.stopBluetooth) as Promise<void>,
+  sendBluetooth: (address, files) => ipcRenderer.invoke(CHANNEL.sendBluetooth, address, files) as Promise<SendOutcome>,
 };
 
 contextBridge.exposeInMainWorld("vshare", api);

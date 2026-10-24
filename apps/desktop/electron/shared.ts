@@ -75,6 +75,22 @@ export interface ListenInfo {
   error: string | null;
 }
 
+/** A device paired with this PC in Windows. `address` is the Bluetooth address, for example AA:BB:CC:DD:EE:FF. */
+export interface BluetoothDeviceInfo {
+  name: string;
+  address: string;
+}
+
+export type BluetoothPairedResult = { ok: true; devices: BluetoothDeviceInfo[] } | { ok: false; error: string };
+
+export interface BluetoothInfo {
+  /** False when the app was started without the Bluetooth bridge. */
+  available: boolean;
+  /** True while this PC accepts phones over Bluetooth. */
+  accepting: boolean;
+  error: string | null;
+}
+
 export interface Snapshot {
   settings: Settings;
   listen: ListenInfo;
@@ -82,6 +98,7 @@ export interface Snapshot {
   transfers: TransferView[];
   history: HistoryEntry[];
   offers: PendingOffer[];
+  bluetooth: BluetoothInfo;
 }
 
 /** `name` is the path the receiver sees. For folder contents it includes the folder: "Trip/day1/a.txt". */
@@ -113,6 +130,10 @@ export const CHANNEL = {
   openPath: "vshare:openPath",
   showInFolder: "vshare:showInFolder",
   clearHistory: "vshare:clearHistory",
+  bluetoothPaired: "vshare:bluetoothPaired",
+  startBluetooth: "vshare:startBluetooth",
+  stopBluetooth: "vshare:stopBluetooth",
+  sendBluetooth: "vshare:sendBluetooth",
 } as const;
 
 export interface VShareApi {
@@ -133,4 +154,8 @@ export interface VShareApi {
   openPath(path: string): Promise<void>;
   showInFolder(path: string): Promise<void>;
   clearHistory(): Promise<void>;
+  bluetoothPaired(): Promise<BluetoothPairedResult>;
+  startBluetooth(): Promise<void>;
+  stopBluetooth(): Promise<void>;
+  sendBluetooth(address: string, files: PickedFile[]): Promise<SendOutcome>;
 }

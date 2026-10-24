@@ -19,7 +19,9 @@ import { MAX_FILES, fileSinkIn, fileSourceFor } from "./files.js";
 import { parseTarget } from "./target.js";
 import { localAddresses, primaryAddress } from "./network.js";
 import { newId, type Store } from "./store.js";
+import { BluetoothBridge, type BridgeTransport } from "./bluetooth.js";
 import type {
+  BluetoothPairedResult,
   HistoryEntry,
   ListenInfo,
   PendingOffer,
@@ -35,6 +37,8 @@ import type {
 export type HubEvent =
   | { kind: "offer"; peer: string; fileCount: number }
   | { kind: "done"; direction: "send" | "receive"; peer: string; fileCount: number };
+
+type OutgoingFile = Awaited<ReturnType<typeof fileSourceFor>>;
 
 const OFFER_TIMEOUT_MS = 60_000;
 /** Names kept in a transfer's view. A folder can hold thousands of files; snapshots must stay small. */
@@ -57,7 +61,7 @@ interface OfferWaiter {
 }
 
 /**
- * Owns the TCP listener, the pairing token, active transfers, and incoming offers.
+ * Owns the TCP listener, the Bluetooth bridge, the pairing token, active transfers, and incoming offers.
  * The protocol package does the wire work; this class connects it to the UI and disk.
  */
 export class TransferHub {
@@ -70,12 +74,23 @@ export class TransferHub {
   private qrCache: { uri: string; dataUrl: string } | null = null;
   private lastEmit = 0;
   private progressTimer: NodeJS.Timeout | null = null;
+  private bluetooth: BluetoothBridge | null = null;
+  private btAccepting = false;
+  private btError: string | null = null;
 
+  /**
+   * @param bluetoothFactory starts the Windows Bluetooth bridge. Null turns Bluetooth off.
+   */
   constructor(
     private store: Store,
     private onChange: (snapshot: Snapshot) => void,
     private notifyUser: (event: HubEvent) => void = () => undefined,
-  ) {}
+    bluetoothFactory: (() => BridgeTransport) | null = null,
+  ) {
+    this.bluetooth = bluetoothFactory
+      ? new BluetoothBridge(bluetoothFactory, (message) => this.bluetoothFailed(message))
+      : null;
+  }
 
   isListening(): boolean {
     return this.server !== null;
@@ -157,13 +172,18 @@ export class TransferHub {
 
   // ---------- receiving ----------
 
-  private handleIncoming(socket: ByteSocket): void {
+  /**
+   * @param bluetoothPeer set when the connection came over Bluetooth. The phone is already paired
+   * with this PC, so no QR code is needed. The six-digit check and per-transfer approval still apply.
+   */
+  private handleIncoming(socket: ByteSocket, bluetoothPeer?: string): void {
     const id = newId();
-    const live = this.register(id, "receive", "Connecting...", []);
+    const live = this.register(id, "receive", bluetoothPeer ?? "Connecting...", []);
+    const viaBluetooth = bluetoothPeer !== undefined;
 
     const receiver = new Receiver(socket, {
       device: { id: this.store.settings.deviceId, name: this.store.settings.deviceName, platform: "windows" },
-      authorize: (hello) => this.authorize(hello),
+      authorize: (hello) => viaBluetooth || this.authorize(hello),
       onOffer: (offer, context) => this.askUser(id, offer, context.sender.name, context.verificationCode),
       openSink: async (meta: FileMeta) => {
         const sink = await fileSinkIn(this.store.settings.downloadDir, meta.name);
@@ -247,23 +267,13 @@ export class TransferHub {
     this.offers.get(offerId)?.resolve(accept);
   }
 
-  // ---------- sending ----------
+  // ---------- sending over Wi-Fi ----------
 
   async sendFiles(target: string, items: PickedFile[]): Promise<SendOutcome> {
     const parsed = parseTarget(target);
     if (!parsed.ok) return parsed;
-    if (items.length === 0) return { ok: false, error: "Choose at least one file to send." };
-    if (items.length > MAX_FILES) return { ok: false, error: `Send at most ${MAX_FILES} files at a time.` };
-    if (items.some((item) => !safeRelativeSegments(item.name))) {
-      return { ok: false, error: "A file has a name that cannot be sent. Rename it and try again." };
-    }
-
-    let files;
-    try {
-      files = await Promise.all(items.map((item) => fileSourceFor(item.path, item.name)));
-    } catch (error) {
-      return { ok: false, error: describe(error) };
-    }
+    const prepared = await this.prepareFiles(items);
+    if (!prepared.ok) return prepared;
 
     const { host, port, token } = parsed;
     let socket: ByteSocket;
@@ -273,14 +283,103 @@ export class TransferHub {
       return { ok: false, error: `Could not reach ${host}:${port}. ${describe(error)}` };
     }
 
+    this.startOutgoing(socket, `${host}:${port}`, prepared.files, token);
+    return { ok: true };
+  }
+
+  // ---------- Bluetooth ----------
+
+  /** Starts accepting phones over Bluetooth. The phone must be paired with this PC in Windows first. */
+  async startBluetooth(): Promise<void> {
+    if (!this.bluetooth || this.btAccepting) return;
+    try {
+      await this.bluetooth.listen((socket, peer) => {
+        this.handleIncoming(socket, peer.name || peer.address || "Bluetooth phone");
+      });
+      this.btAccepting = true;
+      this.btError = null;
+    } catch (error) {
+      this.btAccepting = false;
+      this.btError = describe(error);
+    }
+    this.emitNow();
+  }
+
+  async stopBluetooth(): Promise<void> {
+    if (!this.bluetooth) return;
+    this.btAccepting = false;
+    try {
+      await this.bluetooth.stopListen();
+    } catch {
+      // The bridge may already be gone. Nothing is listening either way.
+    }
+    this.emitNow();
+  }
+
+  /** Devices paired with this PC in Windows. */
+  async bluetoothPaired(): Promise<BluetoothPairedResult> {
+    if (!this.bluetooth) return { ok: false, error: "Bluetooth is not available on this PC." };
+    try {
+      return { ok: true, devices: await this.bluetooth.paired() };
+    } catch (error) {
+      return { ok: false, error: describe(error) };
+    }
+  }
+
+  async sendBluetooth(address: string, items: PickedFile[]): Promise<SendOutcome> {
+    const prepared = await this.prepareFiles(items);
+    if (!prepared.ok) return prepared;
+    if (!this.bluetooth) return { ok: false, error: "Bluetooth is not available on this PC." };
+    let socket: ByteSocket;
+    try {
+      socket = await this.bluetooth.connect(address);
+    } catch (error) {
+      return { ok: false, error: `Could not reach the phone over Bluetooth. ${describe(error)}` };
+    }
+    this.startOutgoing(socket, address, prepared.files, undefined);
+    return { ok: true };
+  }
+
+  /** Stops the Bluetooth bridge process. Called when the app quits. */
+  disposeBluetooth(): void {
+    this.bluetooth?.dispose();
+    this.bluetooth = null;
+    this.btAccepting = false;
+  }
+
+  private bluetoothFailed(message: string): void {
+    this.btAccepting = false;
+    this.btError = message;
+    this.emitNow();
+  }
+
+  // ---------- shared send path ----------
+
+  private async prepareFiles(
+    items: PickedFile[],
+  ): Promise<{ ok: true; files: OutgoingFile[] } | { ok: false; error: string }> {
+    if (items.length === 0) return { ok: false, error: "Choose at least one file to send." };
+    if (items.length > MAX_FILES) return { ok: false, error: `Send at most ${MAX_FILES} files at a time.` };
+    if (items.some((item) => !safeRelativeSegments(item.name))) {
+      return { ok: false, error: "A file has a name that cannot be sent. Rename it and try again." };
+    }
+    try {
+      return { ok: true, files: await Promise.all(items.map((item) => fileSourceFor(item.path, item.name))) };
+    } catch (error) {
+      return { ok: false, error: describe(error) };
+    }
+  }
+
+  /** Runs one outgoing transfer over an open socket. Wi-Fi and Bluetooth both end up here. */
+  private startOutgoing(socket: ByteSocket, peer: string, files: OutgoingFile[], pairToken: string | undefined): void {
     const id = newId();
-    const live = this.register(id, "send", `${host}:${port}`, files.map((file) => file.name));
+    const live = this.register(id, "send", peer, files.map((file) => file.name));
     live.view.totalBytes = files.reduce((sum, file) => sum + file.size, 0);
 
     const sender = new Sender(socket, {
       device: { id: this.store.settings.deviceId, name: this.store.settings.deviceName, platform: "windows" },
       files,
-      pairToken: token,
+      pairToken,
       onState: (state: SendState, detail) => {
         if (detail?.verificationCode) live.view.verificationCode = detail.verificationCode;
         this.applyState(live, mapSendState(state));
@@ -308,8 +407,6 @@ export class TransferHub {
       this.recordFailure(live, result.state === "declined" ? "declined" : result.state === "cancelled" ? "cancelled" : "error", reason);
       this.finish(id, result.state, reason);
     });
-
-    return { ok: true };
   }
 
   // ---------- transfer controls ----------
@@ -352,6 +449,11 @@ export class TransferHub {
       transfers: [...this.live.values()].map((entry) => ({ ...entry.view })),
       history: this.store.history as HistoryEntry[],
       offers: [...this.offers.values()].map((entry) => entry.offer),
+      bluetooth: {
+        available: this.bluetooth !== null,
+        accepting: this.btAccepting,
+        error: this.btError,
+      },
     };
   }
 

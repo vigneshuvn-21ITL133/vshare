@@ -8,7 +8,7 @@ interface Props {
 }
 
 export function ReceivePage({ snapshot, notify }: Props) {
-  const { listen, localAddresses, settings } = snapshot;
+  const { listen, localAddresses, settings, bluetooth } = snapshot;
   const address = listen.host ? `${listen.host}:${listen.port}` : "No network";
   const [now, setNow] = useState(Date.now());
 
@@ -81,6 +81,29 @@ export function ReceivePage({ snapshot, notify }: Props) {
             {localAddresses.length > 1 && (
               <p className="small muted" style={{ marginBottom: 0 }}>Other addresses: {localAddresses.slice(1).join(", ")}</p>
             )}
+          </div>
+
+          <div className="card">
+            <div className="row">
+              <div>
+                <strong>Accept over Bluetooth</strong>
+                <div className="small muted">
+                  For a phone already paired with this PC in Windows settings. Turn it on, then send from the phone's Send tab.
+                </div>
+              </div>
+              <span className="spacer" />
+              <button
+                className={`switch${bluetooth.accepting ? " on" : ""}`}
+                aria-label="Accept over Bluetooth"
+                disabled={!bluetooth.available}
+                onClick={() => {
+                  void (bluetooth.accepting ? api.stopBluetooth() : api.startBluetooth()).then(() =>
+                    notify(bluetooth.accepting ? "Bluetooth receiving is off" : "Bluetooth receiving is on"),
+                  );
+                }}
+              />
+            </div>
+            {bluetooth.error && <div className="error-text">{bluetooth.error}</div>}
           </div>
 
           <div className="card">
