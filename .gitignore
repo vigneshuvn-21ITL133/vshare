@@ -39,3 +39,5 @@ obj/
 *.user
 *.suo
 .vs/
+# Bluetooth bridge publish output
+apps/desktop/bluetooth-bridge/publish/

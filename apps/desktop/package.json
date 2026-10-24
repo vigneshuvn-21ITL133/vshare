@@ -10,9 +10,10 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
-    "build:win": "electron-vite build && electron-builder --win nsis portable",
-    "build:win:portable": "electron-vite build && electron-builder --win portable",
-    "build:win:dir": "electron-vite build && electron-builder --win --dir"
+    "build:bridge": "dotnet publish bluetooth-bridge/VShare.BluetoothBridge.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o bluetooth-bridge/publish",
+    "build:win": "pnpm build:bridge && electron-vite build && electron-builder --win nsis portable",
+    "build:win:portable": "pnpm build:bridge && electron-vite build && electron-builder --win portable",
+    "build:win:dir": "pnpm build:bridge && electron-vite build && electron-builder --win --dir"
   },
   "dependencies": {
     "@vshare/protocol": "workspace:*",
