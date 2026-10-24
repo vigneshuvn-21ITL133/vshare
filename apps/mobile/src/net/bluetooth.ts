@@ -1,3 +1,4 @@
+import { PermissionsAndroid, Platform } from "react-native";
 import RNBluetoothClassic, { type BluetoothDevice, type BluetoothDeviceReadEvent, type BluetoothDeviceEvent } from "react-native-bluetooth-classic";
 import { decodeBase64, encodeBase64, LINE_DELIMITER, type ByteSocket } from "@vshare/protocol";
 
@@ -67,4 +68,25 @@ function wrapBluetooth(device: BluetoothDevice): ByteSocket {
       closeHandler = handler;
     },
   };
+}
+
+/**
+ * Asks for the Bluetooth permissions Android needs, then checks the adapter is on.
+ * Returns a message for the user when something is missing.
+ */
+export async function ensureBluetoothReady(): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (Platform.OS === "android" && Platform.Version >= 31) {
+    const result = await PermissionsAndroid.requestMultiple([
+      PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+      PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+    ]);
+    const granted = Object.values(result).every((value) => value === PermissionsAndroid.RESULTS.GRANTED);
+    if (!granted) return { ok: false, error: "Allow Nearby devices for V_share in Android settings." };
+  }
+  const enabled = await RNBluetoothClassic.isBluetoothEnabled();
+  if (!enabled) {
+    const turnedOn = await RNBluetoothClassic.requestBluetoothEnabled();
+    if (!turnedOn) return { ok: false, error: "Turn on Bluetooth to use this feature." };
+  }
+  return { ok: true };
 }

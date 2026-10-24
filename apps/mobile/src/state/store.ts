@@ -18,6 +18,7 @@ import {
   type SendState,
 } from "@vshare/protocol";
 import { connectTo, listenFor, type Listener } from "../net/socket";
+import { acceptBluetooth, cancelAcceptBluetooth, connectBluetooth, ensureBluetoothReady } from "../net/bluetooth";
 import { sinkFor, sourceFor } from "../net/files";
 import type {
   HistoryEntry,
@@ -70,6 +71,11 @@ export interface AppState {
   updateSettings(patch: Partial<Settings>): Promise<void>;
   clearHistory(): void;
   setPendingTarget(target: string | null): void;
+  btReceiving: boolean;
+  btError: string | null;
+  startBluetoothReceive(): Promise<SendOutcome>;
+  stopBluetoothReceive(): Promise<void>;
+  sendFilesBluetooth(address: string, files: SendableFile[]): Promise<SendOutcome>;
   /** Opens the system folder picker. Resolves to false when the user cancels or the picker fails. */
   chooseSaveFolder(): Promise<boolean>;
 }
@@ -82,6 +88,8 @@ const live = new Map<string, Live>();
 const offerWaiters = new Map<string, OfferWaiter>();
 let progressTimer: ReturnType<typeof setTimeout> | null = null;
 let lastPush = 0;
+/** True while the phone is accepting Bluetooth connections. */
+let btAccepting = false;
 
 const newId = () => randomHex(6);
 
@@ -278,6 +286,49 @@ export const useStore = create<AppState>((set, get) => {
     });
   };
 
+  /** Shared send path: runs a Sender over an open socket and records history. Used by Wi-Fi and Bluetooth. */
+  const startOutgoing = (socket: ByteSocket, label: string, files: SendableFile[], token: string | undefined): SendOutcome => {
+    const id = newId();
+    const entry = register(id, "send", label, files.map((file) => file.name));
+    entry.view.totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+    const sources = files.map(sourceFor);
+
+    const sender = new Sender(socket, {
+      device: { id: get().settings.deviceId, name: get().settings.deviceName, platform: "android" },
+      files: sources,
+      pairToken: token,
+      onState: (state: SendState, detail) => {
+        if (detail?.verificationCode) entry.view.verificationCode = detail.verificationCode;
+        setState(entry, state as TransferState);
+      },
+      onProgress: (progress) => {
+        entry.view.currentFile = progress.fileName;
+        entry.view.bytesDone = progress.bytesSent;
+        pushTransfers();
+      },
+    });
+
+    entry.pause = () => sender.pause();
+    entry.resume = () => sender.resume();
+    entry.cancel = () => sender.cancel();
+
+    void sender.start().then((result) => {
+      if (result.state === "done") {
+        for (const file of files) {
+          addHistory({ direction: "send", name: file.name, size: file.size, peer: entry.view.peer, status: "done", location: file.uri });
+        }
+        finish(id, "done", null);
+        return;
+      }
+      const reason = result.state === "error" ? result.error : result.state === "declined" ? result.reason : null;
+      const status = result.state === "declined" ? "declined" : result.state === "cancelled" ? "cancelled" : "error";
+      failureRow(entry, status, reason, null);
+      finish(id, result.state, reason);
+    });
+
+    return { ok: true };
+  };
+
   return {
     ready: false,
     settings: defaultSettings(),
@@ -288,6 +339,8 @@ export const useStore = create<AppState>((set, get) => {
     localIp: null,
     online: false,
     pendingTarget: null,
+    btReceiving: false,
+    btError: null,
 
     async init() {
       try {
@@ -366,6 +419,55 @@ export const useStore = create<AppState>((set, get) => {
       offerWaiters.get(offerId)?.resolve(accept);
     },
 
+    async startBluetoothReceive() {
+      if (btAccepting) return { ok: true };
+      const ready = await ensureBluetoothReady();
+      if (!ready.ok) {
+        push({ btError: ready.error });
+        return { ok: false, error: ready.error };
+      }
+      btAccepting = true;
+      push({ btReceiving: true, btError: null });
+      void (async () => {
+        while (btAccepting) {
+          try {
+            const socket = await acceptBluetooth();
+            if (!btAccepting) {
+              socket.close();
+              break;
+            }
+            handleIncoming(socket);
+          } catch (error) {
+            if (btAccepting) {
+              btAccepting = false;
+              push({ btReceiving: false, btError: error instanceof Error ? error.message : "Bluetooth stopped." });
+            }
+            break;
+          }
+        }
+      })();
+      return { ok: true };
+    },
+
+    async stopBluetoothReceive() {
+      btAccepting = false;
+      await cancelAcceptBluetooth().catch(() => undefined);
+      push({ btReceiving: false });
+    },
+
+    async sendFilesBluetooth(address, files) {
+      if (files.length === 0) return { ok: false, error: "Choose at least one file to send." };
+      const ready = await ensureBluetoothReady();
+      if (!ready.ok) return { ok: false, error: ready.error };
+      let socket: ByteSocket;
+      try {
+        socket = await connectBluetooth(address);
+      } catch (error) {
+        return { ok: false, error: `Could not connect over Bluetooth. ${error instanceof Error ? error.message : ""}`.trim() };
+      }
+      return startOutgoing(socket, `Bluetooth ${address}`, files, undefined);
+    },
+
     async sendFiles(target, files) {
       const trimmed = target.trim();
       let host: string;
@@ -393,45 +495,7 @@ export const useStore = create<AppState>((set, get) => {
         return { ok: false, error: `Could not reach ${host}:${port}. ${error instanceof Error ? error.message : ""}`.trim() };
       }
 
-      const id = newId();
-      const entry = register(id, "send", `${host}:${port}`, files.map((file) => file.name));
-      entry.view.totalBytes = files.reduce((sum, file) => sum + file.size, 0);
-      const sources = files.map(sourceFor);
-
-      const sender = new Sender(socket, {
-        device: { id: get().settings.deviceId, name: get().settings.deviceName, platform: "android" },
-        files: sources,
-        pairToken: token,
-        onState: (state: SendState, detail) => {
-          if (detail?.verificationCode) entry.view.verificationCode = detail.verificationCode;
-          setState(entry, state as TransferState);
-        },
-        onProgress: (progress) => {
-          entry.view.currentFile = progress.fileName;
-          entry.view.bytesDone = progress.bytesSent;
-          pushTransfers();
-        },
-      });
-
-      entry.pause = () => sender.pause();
-      entry.resume = () => sender.resume();
-      entry.cancel = () => sender.cancel();
-
-      void sender.start().then((result) => {
-        if (result.state === "done") {
-          for (const file of files) {
-            addHistory({ direction: "send", name: file.name, size: file.size, peer: entry.view.peer, status: "done", location: file.uri });
-          }
-          finish(id, "done", null);
-          return;
-        }
-        const reason = result.state === "error" ? result.error : result.state === "declined" ? result.reason : null;
-        const status = result.state === "declined" ? "declined" : result.state === "cancelled" ? "cancelled" : "error";
-        failureRow(entry, status, reason, null);
-        finish(id, result.state, reason);
-      });
-
-      return { ok: true };
+      return startOutgoing(socket, `${host}:${port}`, files, token);
     },
 
     transferAction(id, action) {
