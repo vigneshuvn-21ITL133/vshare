@@ -11,3 +11,4 @@ export * from "./sender.js";
 export * from "./receiver.js";
 export * from "./qr.js";
 export * from "./paths.js";
+export * from "./lineCodec.js";
