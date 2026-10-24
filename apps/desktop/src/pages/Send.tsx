@@ -1,5 +1,5 @@
 import { useState, type DragEvent } from "react";
-import type { PickedFile, Snapshot } from "../../electron/shared";
+import type { BluetoothDeviceInfo, PickedFile, SendOutcome, Snapshot } from "../../electron/shared";
 import type { PageId } from "../components/Sidebar";
 import { api, formatBytes } from "../vshare";
 
@@ -18,6 +18,9 @@ export function SendPage({ snapshot, notify, go }: Props) {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [devices, setDevices] = useState<BluetoothDeviceInfo[] | null>(null);
+  const [btError, setBtError] = useState<string | null>(null);
+  const [btBusy, setBtBusy] = useState(false);
   void snapshot;
 
   const total = files.reduce((sum, file) => sum + file.size, 0);
@@ -64,18 +67,42 @@ export function SendPage({ snapshot, notify, go }: Props) {
     addPaths(paths);
   }
 
-  async function send() {
-    setError(null);
-    setBusy(true);
-    const outcome = await api.sendFiles(target, files);
-    setBusy(false);
+  /** Common result handling for both Wi-Fi and Bluetooth sends. */
+  function afterSend(outcome: SendOutcome, report: (message: string) => void) {
     if (outcome.ok) {
       setFiles([]);
       notify("Sent. Approve the transfer on the other device if asked.");
       go("transfers");
     } else {
-      setError(outcome.error);
+      report(outcome.error);
     }
+  }
+
+  async function send() {
+    setError(null);
+    setBusy(true);
+    const outcome = await api.sendFiles(target, files);
+    setBusy(false);
+    afterSend(outcome, setError);
+  }
+
+  async function loadPaired() {
+    setBtError(null);
+    const result = await api.bluetoothPaired();
+    if (result.ok) {
+      setDevices(result.devices);
+    } else {
+      setDevices(null);
+      setBtError(result.error);
+    }
+  }
+
+  async function sendOverBluetooth(device: BluetoothDeviceInfo) {
+    setBtError(null);
+    setBtBusy(true);
+    const outcome = await api.sendBluetooth(device.address, files);
+    setBtBusy(false);
+    afterSend(outcome, setBtError);
   }
 
   return (
@@ -124,29 +151,57 @@ export function SendPage({ snapshot, notify, go }: Props) {
           </div>
         </div>
 
-        <div className="card">
-          <h3>Receiver</h3>
-          <div className="field">
-            <label htmlFor="target">Pairing link or address</label>
-            <input
-              id="target"
-              className="input mono"
-              placeholder="vshare://pair?... or 192.168.1.23:47800"
-              value={target}
-              onChange={(event) => setTarget(event.target.value)}
-            />
+        <div className="stack">
+          <div className="card">
+            <h3>Receiver</h3>
+            <div className="field">
+              <label htmlFor="target">Pairing link or address</label>
+              <input
+                id="target"
+                className="input mono"
+                placeholder="vshare://pair?... or 192.168.1.23:47800"
+                value={target}
+                onChange={(event) => setTarget(event.target.value)}
+              />
+            </div>
+            <p className="small muted" style={{ marginTop: 0 }}>
+              On the phone, open Receive and copy the pairing link, or type the address shown under the QR code.
+              A link is one-time use and expires in two minutes.
+            </p>
+            {error && <div className="error-text">{error}</div>}
+            <div className="row" style={{ marginTop: 14 }}>
+              <span className="muted small">{files.length} file(s) · {formatBytes(total)}</span>
+              <span className="spacer" />
+              <button className="btn primary" disabled={busy || files.length === 0 || target.trim() === ""} onClick={() => void send()}>
+                {busy ? "Connecting..." : `Send${files.length ? ` (${files.length}) ${formatBytes(total)}` : ""}`}
+              </button>
+            </div>
           </div>
-          <p className="small muted" style={{ marginTop: 0 }}>
-            On the phone, open Receive and copy the pairing link, or type the address shown under the QR code.
-            A link is one-time use and expires in two minutes.
-          </p>
-          {error && <div className="error-text">{error}</div>}
-          <div className="row" style={{ marginTop: 14 }}>
-            <span className="muted small">{files.length} file(s) · {formatBytes(total)}</span>
-            <span className="spacer" />
-            <button className="btn primary" disabled={busy || files.length === 0 || target.trim() === ""} onClick={() => void send()}>
-              {busy ? "Connecting..." : `Send${files.length ? ` (${files.length}) ${formatBytes(total)}` : ""}`}
-            </button>
+
+          <div className="card">
+            <h3>Send over Bluetooth</h3>
+            <p className="small muted" style={{ marginTop: 0 }}>
+              The phone must be paired with this PC in Windows settings, and V_share on the phone must have
+              "Receive over Bluetooth" turned on. Choose files on the left first.
+            </p>
+            <button className="btn" disabled={btBusy} onClick={() => void loadPaired()}>Show paired phones</button>
+            {btError && <div className="error-text">{btError}</div>}
+            {devices !== null && devices.length === 0 && <div className="empty">No paired devices found.</div>}
+            {devices?.map((device) => (
+              <div className="list-row" key={device.address}>
+                <div className="file-meta">
+                  <strong>{device.name || "Unnamed device"}</strong>
+                  <span className="mono">{device.address}</span>
+                </div>
+                <button
+                  className="btn primary small"
+                  disabled={btBusy || files.length === 0}
+                  onClick={() => void sendOverBluetooth(device)}
+                >
+                  {btBusy ? "Sending..." : "Send"}
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       </div>

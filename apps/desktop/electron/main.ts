@@ -4,6 +4,7 @@ import { CHANNEL, type PickedFile, type Settings, type Snapshot, type TransferAc
 import { expandPaths } from "./files.js";
 import { Store } from "./store.js";
 import { TransferHub, type HubEvent } from "./transfers.js";
+import { startBridgeProcess } from "./bridgeProcess.js";
 import { createTray, type TrayHandle } from "./tray.js";
 
 // Only one instance may own the listening port and the store file.
@@ -113,6 +114,12 @@ function registerIpc(): void {
   ipcMain.handle(CHANNEL.refreshPairCode, () => hub.refreshPairCode());
   ipcMain.handle(CHANNEL.respondOffer, (_event, offerId: string, accept: boolean) => hub.respondOffer(offerId, accept));
   ipcMain.handle(CHANNEL.sendFiles, (_event, target: string, files: PickedFile[]) => hub.sendFiles(target, files));
+  ipcMain.handle(CHANNEL.bluetoothPaired, () => hub.bluetoothPaired());
+  ipcMain.handle(CHANNEL.startBluetooth, () => hub.startBluetooth());
+  ipcMain.handle(CHANNEL.stopBluetooth, () => hub.stopBluetooth());
+  ipcMain.handle(CHANNEL.sendBluetooth, (_event, address: string, files: PickedFile[]) =>
+    hub.sendBluetooth(address, files),
+  );
   ipcMain.handle(CHANNEL.transferAction, (_event, id: string, action: TransferAction) => hub.transferAction(id, action));
   ipcMain.handle(CHANNEL.updateSettings, (_event, patch: Partial<Settings>) => {
     const settings = store.updateSettings(patch);
@@ -149,7 +156,7 @@ app.whenReady().then(async () => {
   app.setAppUserModelId("com.vshare.desktop");
   store = new Store();
   applyTheme(store.settings.theme);
-  hub = new TransferHub(store, broadcast, notifyUser);
+  hub = new TransferHub(store, broadcast, notifyUser, startBridgeProcess);
   registerIpc();
   createWindow();
   tray = createTray({
@@ -168,6 +175,7 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   quitting = true;
+  hub?.disposeBluetooth();
   store?.flush();
 });
 
