@@ -5,7 +5,10 @@ export interface LocalAddress {
   name: string;
 }
 
-/** IPv4 addresses on non-internal interfaces, private LAN ranges first. */
+/** Adapters that are usually virtual or local-only. Phones cannot reach a PC through these. */
+const VIRTUAL_ADAPTER = /virtual|vethernet|vmware|vmnet|virtualbox|docker|wsl|hyper-v|loopback|tailscale|zerotier|bluetooth|default switch/i;
+
+/** IPv4 addresses on non-internal interfaces, best candidates first. */
 export function localAddresses(): LocalAddress[] {
   const found: LocalAddress[] = [];
   for (const [name, entries] of Object.entries(networkInterfaces())) {
@@ -14,12 +17,25 @@ export function localAddresses(): LocalAddress[] {
       found.push({ address: entry.address, name });
     }
   }
-  return found.sort((a, b) => rank(a.address) - rank(b.address));
+  return sortCandidates(found);
 }
 
 /** The address phones should connect to. Null if the PC has no network. */
 export function primaryAddress(): string | null {
   return localAddresses()[0]?.address ?? null;
+}
+
+/**
+ * Orders candidates so real adapters beat virtual ones, and private LAN ranges
+ * beat everything else. Without the adapter check, a VirtualBox or Hyper-V
+ * "192.168.x.x" address could be chosen over the real Wi-Fi address.
+ */
+export function sortCandidates(entries: LocalAddress[]): LocalAddress[] {
+  return [...entries].sort((a, b) => score(a) - score(b));
+}
+
+function score(entry: LocalAddress): number {
+  return (VIRTUAL_ADAPTER.test(entry.name) ? 10 : 0) + rank(entry.address);
 }
 
 function rank(address: string): number {
