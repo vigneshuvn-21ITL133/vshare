@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { Button, Card, Switch, Title } from "../../src/components/ui";
 import { QrCode } from "../../src/components/QrCode";
 import { useStore } from "../../src/state/store";
@@ -46,9 +46,14 @@ export default function ReceiveScreen() {
           <>
             <QrCode value={listen.pairUri} size={240} />
             <Text style={styles.caption}>Code refreshes in {secondsLeft}s</Text>
+            <Text style={styles.label}>Pairing link (type it on the PC, or share it)</Text>
+            <Text selectable style={styles.link}>{listen.pairUri}</Text>
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
                 <Button label="New code" onPress={() => refreshPairCode()} full />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Button label="Share link" onPress={() => void Share.share({ message: listen.pairUri ?? "" })} full />
               </View>
             </View>
           </>
@@ -79,6 +84,8 @@ export default function ReceiveScreen() {
         <Text selectable style={styles.address}>{address}</Text>
         <Text style={styles.label}>Port</Text>
         <Text style={styles.value}>{listen.port}</Text>
+        <Button label="Share address" onPress={() => void Share.share({ message: address })} full />
+        <View style={{ height: spacing.sm }} />
         <Text style={styles.hint}>
           Keep V_share open while a transfer runs. Android may pause the app if you switch away for a long time.
         </Text>
@@ -93,6 +100,7 @@ const styles = StyleSheet.create({
   caption: { color: colors.muted, fontSize: 12, textAlign: "center", marginTop: spacing.sm },
   empty: { color: colors.muted, textAlign: "center", paddingVertical: spacing.xl },
   label: { color: colors.muted, fontSize: 12, marginBottom: 4 },
+  link: { color: colors.text, fontSize: 12, fontFamily: "monospace", marginTop: spacing.sm, marginBottom: spacing.sm },
   value: { color: colors.text, fontSize: 16, fontWeight: "600", marginBottom: spacing.sm },
   address: { color: colors.text, fontSize: 22, fontWeight: "700", fontFamily: "monospace", marginBottom: spacing.sm },
   hint: { color: colors.muted, fontSize: 12, lineHeight: 17 },
