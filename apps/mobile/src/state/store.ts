@@ -359,16 +359,22 @@ export const useStore = create<AppState>((set, get) => {
       push({ ready: true });
       await get().refreshNetwork();
       await get().startListening();
+      // Connecting to Wi-Fi or leaving it changes the address the PC must use, so update the code then.
+      Network.addNetworkStateListener(() => void get().refreshNetwork());
     },
 
     async refreshNetwork() {
+      const previous = get().localIp;
       try {
         const [state, ip] = await Promise.all([Network.getNetworkStateAsync(), Network.getIpAddressAsync()]);
-        const usable = ip && ip !== "0.0.0.0" ? ip : null;
+        // Only Wi-Fi addresses are reachable from the PC. A mobile-data address is not.
+        const onWifi = state.type === Network.NetworkStateType.WIFI;
+        const usable = onWifi && ip && ip !== "0.0.0.0" ? ip : null;
         push({ online: Boolean(state.isConnected) && usable !== null, localIp: usable });
       } catch {
         push({ online: false, localIp: null });
       }
+      if (get().localIp !== previous && listener) get().refreshPairCode();
     },
 
     async startListening() {
