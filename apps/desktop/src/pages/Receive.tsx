@@ -9,8 +9,8 @@ interface Props {
 
 export function ReceivePage({ snapshot, notify }: Props) {
   const { listen, localAddresses, settings, bluetooth } = snapshot;
-  const address = listen.host ? `${listen.host}:${listen.port}` : "No network";
   const [now, setNow] = useState(Date.now());
+  const [showCode, setShowCode] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -18,110 +18,105 @@ export function ReceivePage({ snapshot, notify }: Props) {
   }, []);
 
   const secondsLeft = listen.pairExpiresAt ? Math.max(0, Math.ceil((listen.pairExpiresAt - now) / 1000)) : 0;
+  const address = listen.host ? `${listen.host}:${listen.port}` : null;
+  const otherAddresses = localAddresses.slice(1);
 
   function copy(text: string, label: string) {
     void navigator.clipboard.writeText(text).then(() => notify(`${label} copied`));
   }
 
-  return (
-    <>
-      <h1 className="page-title">Receive Files</h1>
-      <p className="page-sub">Scan this code with the V_share app on your phone, or enter the address manually.</p>
+  const status = listen.error
+    ? listen.error
+    : listen.listening
+      ? "Ready. Waiting for files."
+      : "Receiving is off.";
 
-      <div className="grid-2" style={{ alignItems: "start" }}>
-        <div className="card">
-          <div className="qr-wrap">
-            {listen.qrDataUrl ? <img src={listen.qrDataUrl} alt="Pairing QR code" /> : <div className="qr-placeholder">{listen.listening ? "No network address found" : "Receiving is off. Turn it on to show a code."}</div>}
-          </div>
-          <div className="row" style={{ marginTop: 14, justifyContent: "center" }}>
-            <span className="small muted">
-              {listen.pairUri ? `Code refreshes in ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}` : listen.listening ? "Code expired" : ""}
-            </span>
-          </div>
-          <div className="row" style={{ marginTop: 12, justifyContent: "center" }}>
-            <button className="btn" disabled={!listen.listening} onClick={() => void api.refreshPairCode()}>New code</button>
-            <button className="btn" disabled={!listen.pairUri} onClick={() => copy(listen.pairUri ?? "", "Pairing link")}>Copy link</button>
+  return (
+    <div className="rx">
+      <div className="rx-hero">
+        <div className={`rx-avatar${listen.listening ? " live" : ""}`} aria-hidden="true">
+          <svg viewBox="0 0 200 200">
+            <circle cx="100" cy="100" r="82" fill="none" stroke="currentColor" strokeWidth="16" strokeDasharray="34 14" strokeLinecap="round" />
+            <circle cx="100" cy="100" r="42" fill="currentColor" />
+          </svg>
+        </div>
+        <h1 className="rx-name">{settings.deviceName}</h1>
+        <p className={`rx-status${listen.error ? " bad" : ""}`}>{status}</p>
+
+        <button
+          className={`rx-main${listen.listening ? " stop" : ""}`}
+          onClick={() => void (listen.listening ? api.stopListening() : api.startListening())}
+        >
+          {listen.listening ? "Stop receiving" : "Start receiving"}
+        </button>
+        <button className="rx-pill" disabled={!listen.listening} onClick={() => setShowCode(true)}>
+          Show pairing code
+        </button>
+      </div>
+
+      {showCode && (
+        <div className="rx-modal" role="dialog" aria-label="Pairing code" onClick={() => setShowCode(false)}>
+          <div className="rx-sheet" onClick={(event) => event.stopPropagation()}>
+            <div className="qr-wrap">
+              {listen.qrDataUrl ? <img src={listen.qrDataUrl} alt="Pairing QR code" /> : <div className="qr-placeholder">No network address found</div>}
+            </div>
+            <p className="rx-small">
+              {listen.pairUri
+                ? `Code expires in ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}`
+                : "Code expired"}
+            </p>
+            <div className="rx-row">
+              <button className="rx-btn" onClick={() => void api.refreshPairCode()}>New code</button>
+              <button className="rx-btn" disabled={!listen.pairUri} onClick={() => copy(listen.pairUri ?? "", "Pairing link")}>
+                Copy link
+              </button>
+            </div>
+            <button className="rx-btn" onClick={() => setShowCode(false)}>Close</button>
           </div>
         </div>
+      )}
 
-        <div className="stack">
-          <div className="card">
-            <div className="row">
-              <div>
-                <div className="muted small">Accepting files</div>
-                <strong>{listen.listening ? "On" : "Off"}</strong>
-              </div>
-              <span className="spacer" />
-              <button
-                className={`switch${listen.listening ? " on" : ""}`}
-                aria-label="Accept incoming files"
-                onClick={() => void (listen.listening ? api.stopListening() : api.startListening())}
-              />
-            </div>
-            {listen.error && <div className="error-text">{listen.error}</div>}
+      <div className="rx-list">
+        <div className="rx-item">
+          <div>
+            <strong>Address</strong>
+            <span className="mono">{address ?? "No network"}</span>
+            {otherAddresses.length > 0 && <span>Other: {otherAddresses.join(", ")}</span>}
           </div>
+          <button className="rx-btn" disabled={!address} onClick={() => copy(address ?? "", "Address")}>Copy</button>
+        </div>
 
-          <div className="card">
-            <h3>This PC</h3>
-            <div className="row" style={{ marginBottom: 10 }}>
-              <div className="chip">
-                <span>IP address</span>
-                <strong className="mono">{listen.host ?? "—"}</strong>
-              </div>
-              <div className="chip">
-                <span>Port</span>
-                <strong className="mono">{listen.port}</strong>
-              </div>
-            </div>
-            <div className="row">
-              <button className="btn" disabled={!listen.host} onClick={() => copy(address, "Address")}>Copy address</button>
-              <span className="spacer" />
-              <span className="small muted">{listen.listening ? "Waiting for connection..." : "Off"}</span>
-            </div>
-            {localAddresses.length > 1 && (
-              <p className="small muted" style={{ marginBottom: 0 }}>Other addresses: {localAddresses.slice(1).join(", ")}</p>
-            )}
+        <div className="rx-item">
+          <div>
+            <strong>Accept over Bluetooth</strong>
+            <span>For a phone already paired with this PC in Windows settings</span>
           </div>
+          <button
+            className={`rx-switch${bluetooth.accepting ? " on" : ""}`}
+            aria-label="Accept over Bluetooth"
+            disabled={!bluetooth.available}
+            onClick={() => {
+              const wasOn = bluetooth.accepting;
+              void (wasOn ? api.stopBluetooth() : api.startBluetooth()).then(() =>
+                notify(wasOn ? "Bluetooth receiving is off" : "Bluetooth receiving is on"),
+              );
+            }}
+          />
+        </div>
+        {bluetooth.error && <div className="rx-error">{bluetooth.error}</div>}
 
-          <div className="card">
-            <div className="row">
-              <div>
-                <strong>Accept over Bluetooth</strong>
-                <div className="small muted">
-                  For a phone already paired with this PC in Windows settings. Turn it on, then send from the phone's Send tab.
-                </div>
-              </div>
-              <span className="spacer" />
-              <button
-                className={`switch${bluetooth.accepting ? " on" : ""}`}
-                aria-label="Accept over Bluetooth"
-                disabled={!bluetooth.available}
-                onClick={() => {
-                  void (bluetooth.accepting ? api.stopBluetooth() : api.startBluetooth()).then(() =>
-                    notify(bluetooth.accepting ? "Bluetooth receiving is off" : "Bluetooth receiving is on"),
-                  );
-                }}
-              />
-            </div>
-            {bluetooth.error && <div className="error-text">{bluetooth.error}</div>}
+        <div className="rx-item">
+          <div>
+            <strong>Allow connections without scanning</strong>
+            <span>Phones can connect by typing the address. You still approve every transfer.</span>
           </div>
-
-          <div className="card">
-            <div className="row">
-              <div>
-                <strong>Allow connections without scanning</strong>
-                <div className="small muted">Phones can connect by typing the address. You still approve every transfer.</div>
-              </div>
-              <span className="spacer" />
-              <button
-                className={`switch${settings.allowManualConnections ? " on" : ""}`}
-                aria-label="Allow manual connections"
-                onClick={() => void api.updateSettings({ allowManualConnections: !settings.allowManualConnections })}
-              />
-            </div>
-          </div>
+          <button
+            className={`rx-switch${settings.allowManualConnections ? " on" : ""}`}
+            aria-label="Allow connections without scanning"
+            onClick={() => void api.updateSettings({ allowManualConnections: !settings.allowManualConnections })}
+          />
         </div>
       </div>
-    </>
+    </div>
   );
 }
