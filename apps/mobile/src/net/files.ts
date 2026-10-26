@@ -1,4 +1,4 @@
-import { Directory, File, Paths } from "expo-file-system";
+import { Directory, File, FileMode, Paths } from "expo-file-system";
 import { safeRelativeSegments, type FileMeta, type FileSink, type FileSource } from "@vshare/protocol";
 import type { SendableFile } from "../state/types";
 
@@ -71,7 +71,9 @@ export function sinkFor(meta: FileMeta, saveFolderUri: string | null): { sink: F
   if (!file) file = createIncomingFile(meta.name);
 
   const target = file;
-  const handle = target.open();
+  // Open for writing explicitly. The default mode is read-only for content:// (SAF) folders
+  // the user picked, and every write would then fail.
+  const handle = target.open(FileMode.WriteOnly);
   let finished = false;
   return {
     uri: () => target.uri,
